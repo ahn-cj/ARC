@@ -6,6 +6,7 @@
 
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
         <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+        <script src="js/FileSaver.js"></script>
         <script src="js/common.js"></script>
         <script src="js/testing_interface.js"></script>
 
@@ -54,12 +55,17 @@
                             <div id="resize_control_btns">
                                 <label for="output_grid_size">Change grid size: </label>
                                 <input type="text" id="output_grid_size" class="grid_size_field" name="size" value="3x3">
-                                <button onclick="resizeOutputGrid()" id="resize_btn">Resize</button>
+                                <button onclick="resizeOutputGrid(true)" id="resize_btn">Resize</button>
                             </div>
 
                             <button onclick="copyFromInput()">Copy from input</button>
-                            <button onclick="resetOutputGrid()">Reset grid</button>
+                            <button onclick="resetOutputGrid(true)">Reset grid</button>
                             <button onclick="submitSolution()" id="submit_solution_btn">Submit!</button>
+                        </div>
+
+                        <div id="editor_grid_control_btns">
+                            <div class="text left">PDDL Action Tracker</div>
+                            <center><button onclick="downloadPDDL()" id="">Download PDDL</button></center>
                         </div>
 
                         <div id="output_grid">

@@ -5,19 +5,23 @@ var CURRENT_OUTPUT_GRID = new Grid(3, 3);
 var TEST_PAIRS = new Array();
 var CURRENT_TEST_PAIR_INDEX = 0;
 var COPY_PASTE_DATA = new Array();
+var TASK_ID = "";
 
 // Cosmetic.
 var EDITION_GRID_HEIGHT = 500;
 var EDITION_GRID_WIDTH = 500;
 var MAX_CELL_SIZE = 100;
 
+// PDDL
+var ACTION_COUNT = 0;
+var PDDL = [];
 
 function resetTask() {
     CURRENT_INPUT_GRID = new Grid(3, 3);
     TEST_PAIRS = new Array();
     CURRENT_TEST_PAIR_INDEX = 0;
     $('#task_preview').html('');
-    resetOutputGrid();
+    resetOutputGrid(false);
 }
 
 function refreshEditionGrid(jqGrid, dataGrid) {
@@ -52,15 +56,21 @@ function setUpEditionGridListeners(jqGrid) {
             grid = CURRENT_OUTPUT_GRID.grid;
             floodfillFromLocation(grid, cell.attr('x'), cell.attr('y'), symbol);
             syncFromDataGridToEditionGrid();
+
+            if (typeof symbol !== 'undefined')
+                PDDL.push("FILL " + cell.attr("x") + " " + cell.attr("y") + " " + symbol)
         }
         else if (mode == 'edit') {
             // Else: fill just this cell.
             setCellSymbol(cell, symbol);
+
+            if (typeof symbol !== 'undefined')
+                PDDL.push("EDIT " + cell[0].getAttribute("x") + " " + cell[0].getAttribute("y") + " " + symbol)
         }
     });
 }
 
-function resizeOutputGrid() {
+function resizeOutputGrid(from_ui) {
     size = $('#output_grid_size').val();
     size = parseSizeTuple(size);
     height = size[0];
@@ -71,13 +81,17 @@ function resizeOutputGrid() {
     dataGrid = JSON.parse(JSON.stringify(CURRENT_OUTPUT_GRID.grid));
     CURRENT_OUTPUT_GRID = new Grid(height, width, dataGrid);
     refreshEditionGrid(jqGrid, CURRENT_OUTPUT_GRID);
+
+    if (from_ui) PDDL.push("RESIZE " + CURRENT_OUTPUT_GRID['height'] + " " + CURRENT_OUTPUT_GRID['width']);
 }
 
-function resetOutputGrid() {
+function resetOutputGrid(from_ui) {
     syncFromEditionGridToDataGrid();
     CURRENT_OUTPUT_GRID = new Grid(3, 3);
     syncFromDataGridToEditionGrid();
-    resizeOutputGrid();
+    resizeOutputGrid(false);
+
+    if (from_ui) PDDL.push('RESET_GRID')
 }
 
 function copyFromInput() {
@@ -85,6 +99,8 @@ function copyFromInput() {
     CURRENT_OUTPUT_GRID = convertSerializedGridToGridObject(CURRENT_INPUT_GRID.grid);
     syncFromDataGridToEditionGrid();
     $('#output_grid_size').val(CURRENT_OUTPUT_GRID.height + 'x' + CURRENT_OUTPUT_GRID.width);
+
+    PDDL.push('COPY_INPUT');
 }
 
 function fillPairPreview(pairId, inputGrid, outputGrid) {
@@ -135,10 +151,13 @@ function loadJSONTask(train, test) {
     CURRENT_TEST_PAIR_INDEX = 0;
     $('#current_test_input_id_display').html('1');
     $('#total_test_input_count_display').html(test.length);
+
+    initPDDL();
 }
 
 function loadTaskFromFile(e) {
     var file = e.target.files[0];
+    TASK_ID = file['name'];
     if (!file) {
         errorMsg('No file selected');
         return;
@@ -164,6 +183,7 @@ function randomTask() {
     var subset = "training";
     $.getJSON("https://api.github.com/repos/fchollet/ARC/contents/data/" + subset, function(tasks) {
       var task = tasks[Math.floor(Math.random() * tasks.length)];
+      TASK_ID = task['name'];
       $.getJSON(task["download_url"], function(json) {
           try {
               train = json['train'];
@@ -235,6 +255,7 @@ function copyToOutput() {
 function initializeSelectable() {
     try {
         $('.selectable_grid').selectable('destroy');
+        // PDDL.push("DESELECT")
     }
     catch (e) {
     }
@@ -255,6 +276,18 @@ function initializeSelectable() {
     }
 }
 
+// PDDL Action Tracking
+function downloadPDDL() {
+    var blob = new Blob([PDDL.join('\n')],
+                { type: "text/plain;charset=utf-8" });
+    saveAs(blob, TASK_ID.split('.')[0] + ".txt");
+}
+
+function initPDDL() {
+    PDDL = [];
+    PDDL.push("GRID " + CURRENT_OUTPUT_GRID['height'] + " " + CURRENT_OUTPUT_GRID['width']);
+}
+
 // Initial event binding.
 
 $(document).ready(function () {
@@ -270,6 +303,9 @@ $(document).ready(function () {
             $('.edition_grid').find('.ui-selected').each(function(i, cell) {
                 symbol = getSelectedSymbol();
                 setCellSymbol($(cell), symbol);
+
+                if (typeof symbol !== 'undefined')
+                    PDDL.push("SELECT_FILL " + " " + cell.getAttribute("x") + " " + cell.getAttribute("y") + " "+ symbol)
             });
         }
     });
@@ -300,12 +336,22 @@ $(document).ready(function () {
                 return;
             }
 
+            // Map Source/Target Value
+            source = selected[0].parentElement.parentElement.parentElement.getAttribute("id");
+
             COPY_PASTE_DATA = [];
             for (var i = 0; i < selected.length; i ++) {
                 x = parseInt($(selected[i]).attr('x'));
                 y = parseInt($(selected[i]).attr('y'));
                 symbol = parseInt($(selected[i]).attr('symbol'));
                 COPY_PASTE_DATA.push([x, y, symbol]);
+
+                var s = 0;
+                if (source == "evalution-input-view")
+                    s = 0;
+                else if (source == "output_grid")
+                    s = 1;
+                PDDL.push("SELECT_COPY "  + x + " " + y + " " + symbol + " " + s);
             }
             infoMsg('Cells copied! Select a target cell and press V to paste at location.');
 
@@ -323,6 +369,9 @@ $(document).ready(function () {
             }
 
             jqGrid = $(selected.parent().parent()[0]);
+
+            // Map Source/Target Value
+            source = selected[0].parentElement.parentElement.parentElement.getAttribute("id");
 
             if (selected.length == 1) {
                 targetx = parseInt(selected.attr('x'));
@@ -350,6 +399,13 @@ $(document).ready(function () {
                     if (res.length == 1) {
                         cell = $(res[0]);
                         setCellSymbol(cell, symbol);
+
+                        var s = 0;
+                        if (source == "evalution-input-view")
+                            s = 0;
+                        else if (source == "output_grid")
+                            s = 1;
+                        PDDL.push("SELECT_PASTE "  + cell.attr('x') + " " + cell.attr('y') + " " + symbol + " " + s);
                     }
                 }
             } else {
